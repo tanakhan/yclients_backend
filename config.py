@@ -1,19 +1,26 @@
 # Configuration for YCLIENTS backend
 import os
 
-# Load environment variables from .env file if it exists
-def load_env_file():
-    """Load environment variables from .env file"""
-    env_file = os.path.join(os.path.dirname(__file__), '.env')
-    if os.path.exists(env_file):
-        with open(env_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    os.environ[key.strip()] = value.strip().strip('"').strip("'")
+# Try to use python-dotenv if available, fallback to custom loader
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    DOTENV_AVAILABLE = True
+except ImportError:
+    # Fallback to custom .env loader if python-dotenv is not installed
+    def load_env_file():
+        """Load environment variables from .env file"""
+        env_file = os.path.join(os.path.dirname(__file__), '.env')
+        if os.path.exists(env_file):
+            with open(env_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        os.environ[key.strip()] = value.strip().strip('"').strip("'")
 
-load_env_file()
+    load_env_file()
+    DOTENV_AVAILABLE = False
 
 # Mode detection from .env (check first letter: 'p' for production, 'd' for dev)
 MODE = os.getenv('MODE', 'dev').lower()
