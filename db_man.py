@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 import asyncio
 import logging
-from config import db_name, db_collection_name, logger_base_name, MONGODB_USAGE_COLLECTION, TIMEZONE
+from config import db_name, db_collection_name, logger_base_name, MONGODB_USAGE_COLLECTION, TIMEZONE, MONGODB_CONNECTION_STRING
 from logging_utils import setup_logger
 from utils import get_current_time
 import pytz
@@ -33,8 +33,12 @@ except (pytz.exceptions.UnknownTimeZoneError, NameError):
 _db_instances = []
 
 class DatabaseManager:
-    def __init__(self, connection_string='mongodb://localhost:27017/', project_name: Optional[str] = None, timezone: Optional[str] = None):
+    def __init__(self, connection_string=None, project_name: Optional[str] = None, timezone: Optional[str] = None):
         """Initialize database connection"""
+        # Use provided connection string or default to config
+        if connection_string is None:
+            connection_string = MONGODB_CONNECTION_STRING
+
         self.mongo_client = MongoClient(connection_string,
                                    maxPoolSize=10,
                                    serverSelectionTimeoutMS=5000)
