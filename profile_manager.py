@@ -6,7 +6,10 @@ from typing import Dict, Any, Optional
 class ProfileManager:
     """Manager for handling multiple company profiles"""
 
-    def __init__(self, profiles_file: str = "profiles.json"):
+    def __init__(self, profiles_file: str = None):
+        # Use absolute path relative to this file if not specified
+        if profiles_file is None:
+            profiles_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles.json")
         self.profiles_file = profiles_file
         self.profiles = {}
         self.default_profile = None
