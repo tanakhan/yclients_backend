@@ -40,11 +40,16 @@ class YClientsSalonsFetcher:
         if not self.profile:
             raise ValueError(f"Profile '{profile_name}' not found")
 
+        self.company_name = self.profile['name']
+        self.company_timezone = self.profile.get('timezone', 'UTC')
+        self.salon_ids = self.profile.get('salon_ids', [])
         self.partner_token = self.profile['yclients']['partner_token']
         self.user_token = self.profile['yclients'].get('user_token')
         self.booking_forms = self.profile['yclients']['booking_forms']
 
-        self.db_manager = DatabaseManager()
+        # Use company name as database name (sanitize it for MongoDB)
+        db_name = self.company_name.lower().replace(' ', '_').replace('-', '_')
+        self.db_manager = DatabaseManager(project_name=db_name, timezone=self.company_timezone)
         self.base_url = "https://api.yclients.com/api/v1"
 
         # Setup session for HTTP requests
@@ -65,7 +70,7 @@ class YClientsSalonsFetcher:
             'Authorization': f'Bearer {self.partner_token}'
         })
 
-        logger.info(f"Initialized YCLIENTS fetcher for profile: {self.profile['name']}")
+        logger.info(f"Initialized YCLIENTS fetcher for company: {self.company_name} (database: {db_name})")
     
     def _make_request(self, url: str, use_user_token: bool = False) -> Optional[Dict[str, Any]]:
         """
@@ -175,7 +180,7 @@ class YClientsSalonsFetcher:
             print(f"{'='*60}\\n")
             
             # 2) Save to MongoDB 'salons' collection using upsert
-            current_time = get_current_time()
+            current_time = get_current_time(self.company_timezone)
             adjusted_time = self.db_manager._adjust_time_for_storage(current_time)
             salons_collection = self.db_manager.db['salons']
             

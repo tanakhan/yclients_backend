@@ -33,19 +33,31 @@ except (pytz.exceptions.UnknownTimeZoneError, NameError):
 _db_instances = []
 
 class DatabaseManager:
-    def __init__(self, connection_string='mongodb://localhost:27017/', project_name: Optional[str] = None):
+    def __init__(self, connection_string='mongodb://localhost:27017/', project_name: Optional[str] = None, timezone: Optional[str] = None):
         """Initialize database connection"""
-        self.mongo_client = MongoClient(connection_string, 
-                                  maxPoolSize=10,
-                                  serverSelectionTimeoutMS=5000)
-        
+        self.mongo_client = MongoClient(connection_string,
+                                   maxPoolSize=10,
+                                   serverSelectionTimeoutMS=5000)
+
         # Use project-specific database if provided, otherwise use default
         self.project_name = project_name or db_name
         self.db = self.mongo_client[self.project_name]
         self.chats = self.db[db_collection_name]
         self.usage = self.db[MONGODB_USAGE_COLLECTION]  # Use config variable
-        logger.info(f"DatabaseManager initialized with database: {self.project_name}, timezone offset: {UTC_OFFSET_HOURS}h")
-        
+
+        # Configure timezone for this instance
+        self.timezone = timezone or TIMEZONE
+        try:
+            self.configured_timezone = pytz.timezone(self.timezone)
+            # Calculate the UTC offset in hours for the current timezone
+            now = datetime.now(self.configured_timezone)
+            self.utc_offset_hours = now.utcoffset().total_seconds() / 3600
+            logger.info(f"DatabaseManager initialized with database: {self.project_name}, timezone: {self.timezone}, offset: {self.utc_offset_hours}h")
+        except (pytz.exceptions.UnknownTimeZoneError, NameError):
+            logger.warning(f"Unknown timezone {self.timezone}, defaulting to UTC.")
+            self.configured_timezone = pytz.UTC
+            self.utc_offset_hours = 0
+
         # Add instance to global tracking list
         global _db_instances
         if self not in _db_instances:
@@ -85,21 +97,20 @@ class DatabaseManager:
         """
         Pre-adjust a datetime for storage in MongoDB to compensate for UTC conversion.
         This adds the UTC offset so that when MongoDB converts to UTC, it will represent the correct local time.
-        
+
         Args:
             dt: Datetime object to adjust
-            
+
         Returns:
             Adjusted datetime object (still with timezone info, but time value adjusted)
         """
         if dt is None:
             return None
-        
-        # The trick: add the UTC offset to the datetime before saving
-        # When MongoDB converts it to UTC, it will effectively cancel out
-        adjusted = dt + timedelta(hours=UTC_OFFSET_HOURS)
-        
-        logger.debug(f"Original time: {dt.isoformat()}, Adjusted for storage: {adjusted.isoformat()}")
+
+        # Use instance-specific timezone offset
+        adjusted = dt + timedelta(hours=self.utc_offset_hours)
+
+        logger.debug(f"Original time: {dt.isoformat()}, Adjusted for storage: {adjusted.isoformat()} (timezone: {self.timezone})")
         return adjusted
     
     async def save_usage_data(self, model: str, input_tokens: int, output_tokens: int, 
@@ -126,7 +137,7 @@ class DatabaseManager:
             
             # Use current time in configured timezone if timestamp not provided
             if timestamp is None:
-                timestamp = get_current_time()
+                timestamp = get_current_time(self.timezone)
             
             # Adjust the time value before storing
             adjusted_timestamp = self._adjust_time_for_storage(timestamp)
@@ -197,7 +208,7 @@ class DatabaseManager:
                 user_doc_id = str(user_id)
             
             # Get current time for created_at if needed
-            current_time = get_current_time()
+            current_time = get_current_time(self.timezone)
             adjusted_time = self._adjust_time_for_storage(current_time)
             
             # Prepare update document
@@ -254,7 +265,7 @@ class DatabaseManager:
                 logger.warning(f"No username provided for user_id {user_id}, using user_id as document ID")
             
             # Get current time and adjust for storage
-            current_time = get_current_time()
+            current_time = get_current_time(self.timezone)
             adjusted_time = self._adjust_time_for_storage(current_time)
             
             message_item = {
