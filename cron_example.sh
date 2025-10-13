@@ -5,8 +5,8 @@
 # Change to the project directory (adjust path as needed)
 cd /Users/baxter/projects/06_business/129_yclients_backend
 
-# Run the full sync script
-/usr/bin/python3 yclients_full_sync.py >> /var/log/yclients_sync.log 2>&1
+# Activate virtual environment and run the full sync script
+venv/bin/python3 yclients_full_sync.py >> /var/log/yclients_sync.log 2>&1
 
 # Optional: Send email notification on failure (uncomment and configure)
 # if [ $? -ne 0 ]; then
