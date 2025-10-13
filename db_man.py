@@ -1,7 +1,14 @@
 from pymongo import MongoClient
 import asyncio
 import logging
-from config import db_name, db_collection_name, logger_base_name, MONGODB_USAGE_COLLECTION, TIMEZONE, MONGODB_CONNECTION_STRING
+from config import MONGODB_CONNECTION_STRING
+
+# Default values for backward compatibility
+db_name = "yclients_db"
+db_collection_name = "chats"
+logger_base_name = "yclients"
+MONGODB_USAGE_COLLECTION = "usage"
+TIMEZONE = "UTC"
 from logging_utils import setup_logger
 from utils import get_current_time
 import pytz
