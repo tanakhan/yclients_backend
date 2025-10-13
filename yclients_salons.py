@@ -47,6 +47,8 @@ class YClientsSalonsFetcher:
         self.user_token = self.profile['yclients'].get('user_token')
         self.booking_forms = self.profile['yclients']['booking_forms']
 
+        logger.info(f"Profile salon_ids: {self.salon_ids}")
+
         # Use company name as database name (sanitize it for MongoDB)
         db_name = self.company_name.lower().replace(' ', '_').replace('-', '_')
         self.db_manager = DatabaseManager(project_name=db_name, timezone=self.company_timezone)
@@ -75,21 +77,27 @@ class YClientsSalonsFetcher:
     def _make_request(self, url: str, use_user_token: bool = False) -> Optional[Dict[str, Any]]:
         """
         Make HTTP request to YCLIENTS API
-        
+
         Args:
             url: API endpoint URL
             use_user_token: Whether to include user token in authorization
-            
+
         Returns:
             JSON response data or None if failed
         """
         headers = self.session.headers.copy()
         if use_user_token and self.user_token:
             headers['Authorization'] = f'Bearer {self.partner_token}, User {self.user_token}'
-        
+
         try:
             response = self.session.get(url, headers=headers, timeout=YCLIENTS_TIMEOUT)
             response.raise_for_status()
+
+            # Print raw response for debugging
+            print(f"Raw API response for {url}:")
+            print(response.text)
+            print("-" * 40)
+
             return response.json()
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed for {url}: {e}")
@@ -267,21 +275,15 @@ async def main(profile_name: Optional[str] = None):
         # Initialize fetcher with profile
         fetcher = YClientsSalonsFetcher(profile_name)
 
-        form_ids = fetcher.booking_forms
-        if not form_ids:
-            logger.error("No booking forms configured in profile")
+        # Use salon_ids directly from profile instead of fetching from booking forms
+        if not fetcher.salon_ids:
+            logger.error("No salon_ids configured in profile")
             return False
 
-        logger.info(f"Processing {len(form_ids)} booking forms: {form_ids}")
+        all_salon_ids = set(fetcher.salon_ids)
+        logger.info(f"Using {len(all_salon_ids)} salon IDs from profile: {all_salon_ids}")
 
-        # Step 1: Fetch all unique salon IDs from booking forms
-        all_salon_ids = fetcher.fetch_all_salon_ids(form_ids)
-
-        if not all_salon_ids:
-            logger.error("No salon IDs found in any booking forms")
-            return False
-
-        # Step 2: Fetch and save salon information for all salon IDs
+        # Step 1: Fetch and save salon information for all salon IDs
         success = await fetcher.fetch_and_save_all_salons_info(all_salon_ids)
 
         if success:
@@ -318,8 +320,8 @@ if __name__ == "__main__":
         sys.exit(0)
 
     print("YCLIENTS Salons Data Fetcher")
-    print("Fetches salon information from YCLIENTS booking forms")
-    print("- Extracts salon IDs from booking forms")
+    print("Fetches salon information from YCLIENTS API")
+    print("- Uses salon IDs from profile configuration")
     print("- Fetches detailed salon information")
     print("- Shows prettified JSON in terminal")
     print("- Stores in MongoDB 'salons' collection")
