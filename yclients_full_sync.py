@@ -428,36 +428,34 @@ class YClientsFullDataSyncer:
             logger.error(f"Error fetching and saving staff data for salon {salon_id}: {e}")
             return False
 
-    async def generate_simplified_data(self) -> Dict[str, Any]:
+    async def generate_simplified_data_for_salon(self, salon_id: int) -> Dict[str, Any]:
         """
-        Generate simplified data structure for prompts collection
+        Generate simplified data structure for a specific salon
+
+        Args:
+            salon_id: The salon ID to generate data for
 
         Returns:
-            Dict containing simplified salon, staff, and service data
+            Dict containing simplified salon, staff, and service data for this salon
         """
         try:
-            logger.info("Generating simplified data structure for prompts collection")
+            logger.info(f"Generating simplified data structure for salon {salon_id}")
 
             # Get the salon document from database
-            salon_doc = None
-            salon_ids = self.salon_ids
-            if salon_ids:
-                # Use the first salon ID (assuming single salon per company for now)
-                salon_id = str(salon_ids[0])
-                salons_collection = self.db_manager.db['salons']
+            salons_collection = self.db_manager.db['salons']
 
-                loop = asyncio.get_event_loop()
-                salon_doc = await loop.run_in_executor(
-                    None,
-                    lambda: salons_collection.find_one({'_id': salon_id})
-                )
+            loop = asyncio.get_event_loop()
+            salon_doc = await loop.run_in_executor(
+                None,
+                lambda: salons_collection.find_one({'_id': str(salon_id)})
+            )
 
             if not salon_doc:
-                logger.warning("No salon document found for simplified data generation")
+                logger.warning(f"No salon document found for salon {salon_id}")
                 return {}
 
             simplified_data = {
-                "_id": str(self.salon_ids[0]) if self.salon_ids else None,
+                "_id": str(salon_id),
             }
 
             # Extract salon info
@@ -511,11 +509,11 @@ class YClientsFullDataSyncer:
                     })
                 simplified_data['category_name_to_id'] = category_list
 
-            logger.info("Successfully generated simplified data structure")
+            logger.info(f"Successfully generated simplified data structure for salon {salon_id}")
             return simplified_data
 
         except Exception as e:
-            logger.error(f"Error generating simplified data: {e}")
+            logger.error(f"Error generating simplified data for salon {salon_id}: {e}")
             return {}
 
     async def save_simplified_data(self, simplified_data: Dict[str, Any]) -> bool:
@@ -643,27 +641,28 @@ class YClientsFullDataSyncer:
                 logger.error(f"Exception during staff fetch for salon {salon_id}: {e}")
                 overall_success = False
 
-        # Phase 4: Generate and save simplified data
+        # Phase 4: Generate and save simplified data for each salon
         logger.info("\\n" + "="*80)
-        logger.info("PHASE 4: GENERATING SIMPLIFIED DATA")
+        logger.info("PHASE 4: GENERATING SIMPLIFIED DATA FOR EACH SALON")
         logger.info("="*80)
 
-        try:
-            logger.info("Generating simplified data structure")
-            simplified_data = await self.generate_simplified_data()
-            if simplified_data:
-                success = await self.save_simplified_data(simplified_data)
-                if success:
-                    logger.info("Successfully generated and saved simplified data")
+        for salon_id in salon_ids:
+            try:
+                logger.info(f"Generating simplified data for salon {salon_id}")
+                simplified_data = await self.generate_simplified_data_for_salon(salon_id)
+                if simplified_data:
+                    success = await self.save_simplified_data(simplified_data)
+                    if success:
+                        logger.info(f"Successfully generated and saved simplified data for salon {salon_id}")
+                    else:
+                        logger.error(f"Failed to save simplified data for salon {salon_id}")
+                        overall_success = False
                 else:
-                    logger.error("Failed to save simplified data")
+                    logger.error(f"Failed to generate simplified data for salon {salon_id}")
                     overall_success = False
-            else:
-                logger.error("Failed to generate simplified data")
+            except Exception as e:
+                logger.error(f"Exception during simplified data generation for salon {salon_id}: {e}")
                 overall_success = False
-        except Exception as e:
-            logger.error(f"Exception during simplified data generation: {e}")
-            overall_success = False
 
         # Final summary
         logger.info("\\n" + "="*80)
