@@ -428,6 +428,151 @@ class YClientsFullDataSyncer:
             logger.error(f"Error fetching and saving staff data for salon {salon_id}: {e}")
             return False
 
+    async def generate_simplified_data(self) -> Dict[str, Any]:
+        """
+        Generate simplified data structure for prompts collection
+
+        Returns:
+            Dict containing simplified salon, staff, and service data
+        """
+        try:
+            logger.info("Generating simplified data structure for prompts collection")
+
+            # Get the salon document from database
+            salon_doc = None
+            salon_ids = self.salon_ids
+            if salon_ids:
+                # Use the first salon ID (assuming single salon per company for now)
+                salon_id = str(salon_ids[0])
+                salons_collection = self.db_manager.db['salons']
+
+                loop = asyncio.get_event_loop()
+                salon_doc = await loop.run_in_executor(
+                    None,
+                    lambda: salons_collection.find_one({'_id': salon_id})
+                )
+
+            if not salon_doc:
+                logger.warning("No salon document found for simplified data generation")
+                return {}
+
+            simplified_data = {
+                "_id": str(self.salon_ids[0]) if self.salon_ids else None,
+            }
+
+            # Extract salon info
+            if 'salon_info' in salon_doc and 'data' in salon_doc['salon_info']:
+                salon_data = salon_doc['salon_info']['data']
+                simplified_data['salon_info'] = {
+                    salon_data.get('title', ''): {
+                        'id': salon_data.get('id'),
+                        'phone': salon_data.get('phone', ''),
+                        'address': salon_data.get('address', '')
+                    }
+                }
+
+            # Extract staff data
+            if 'staff' in salon_doc and 'data' in salon_doc['staff']:
+                staff_list = []
+                for staff in salon_doc['staff']['data']:
+                    staff_list.append({
+                        staff.get('name', ''): {
+                            'id': staff.get('id')
+                        }
+                    })
+                simplified_data['staff_name_to_id'] = staff_list
+
+            # Extract services data
+            service_name_to_id = {}
+            if 'services' in salon_doc and 'company_services' in salon_doc['services'] and 'data' in salon_doc['services']['company_services']:
+                for service in salon_doc['services']['company_services']['data']:
+                    service_name = service.get('title', '')
+                    if service_name:
+                        service_info = {
+                            'id': service.get('id'),
+                            'price': service.get('price_min', 0),
+                            'category_id': service.get('category_id')
+                        }
+
+                        if service_name not in service_name_to_id:
+                            service_name_to_id[service_name] = []
+                        service_name_to_id[service_name].append(service_info)
+
+            simplified_data['service_name_to_id'] = service_name_to_id
+
+            # Extract categories data
+            if 'categories' in salon_doc and 'data' in salon_doc['categories']:
+                category_list = []
+                for category in salon_doc['categories']['data']:
+                    category_list.append({
+                        category.get('title', ''): {
+                            'category_id': category.get('id')
+                        }
+                    })
+                simplified_data['category_name_to_id'] = category_list
+
+            logger.info("Successfully generated simplified data structure")
+            return simplified_data
+
+        except Exception as e:
+            logger.error(f"Error generating simplified data: {e}")
+            return {}
+
+    async def save_simplified_data(self, simplified_data: Dict[str, Any]) -> bool:
+        """
+        Save simplified data to prompts collection
+
+        Args:
+            simplified_data: The simplified data structure to save
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            if not simplified_data:
+                logger.warning("No simplified data to save")
+                return False
+
+            logger.info("Saving simplified data to prompts collection")
+
+            # Save to prompts collection
+            prompts_collection = self.db_manager.db['prompts']
+            current_time = get_current_time(self.company_timezone)
+            adjusted_time = self.db_manager._adjust_time_for_storage(current_time)
+
+            update_doc = {
+                '$set': {
+                    **simplified_data,
+                    'updated_at': adjusted_time
+                },
+                '$setOnInsert': {
+                    'created_at': adjusted_time
+                }
+            }
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: prompts_collection.update_one(
+                    {'_id': simplified_data.get('_id')},
+                    update_doc,
+                    upsert=True
+                )
+            )
+
+            if result.upserted_id:
+                logger.info("Created new prompts document")
+            elif result.modified_count > 0:
+                logger.info("Updated existing prompts document")
+            else:
+                logger.info("No changes needed for prompts document")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Error saving simplified data: {e}")
+            return False
+
     async def run_full_sync(self) -> bool:
         """
         Run complete sync for all salon IDs: fetch salon info, services, and staff data
@@ -498,6 +643,28 @@ class YClientsFullDataSyncer:
                 logger.error(f"Exception during staff fetch for salon {salon_id}: {e}")
                 overall_success = False
 
+        # Phase 4: Generate and save simplified data
+        logger.info("\\n" + "="*80)
+        logger.info("PHASE 4: GENERATING SIMPLIFIED DATA")
+        logger.info("="*80)
+
+        try:
+            logger.info("Generating simplified data structure")
+            simplified_data = await self.generate_simplified_data()
+            if simplified_data:
+                success = await self.save_simplified_data(simplified_data)
+                if success:
+                    logger.info("Successfully generated and saved simplified data")
+                else:
+                    logger.error("Failed to save simplified data")
+                    overall_success = False
+            else:
+                logger.error("Failed to generate simplified data")
+                overall_success = False
+        except Exception as e:
+            logger.error(f"Exception during simplified data generation: {e}")
+            overall_success = False
+
         # Final summary
         logger.info("\\n" + "="*80)
         if overall_success:
@@ -562,6 +729,7 @@ if __name__ == "__main__":
     print("Fetches complete salon information, services, and staff data")
     print("- Uses salon IDs from profile configuration")
     print("- Updates MongoDB 'salons' collection with all data")
+    print("- Generates simplified data structure for 'prompts' collection")
     print("- Shows prettified JSON responses in terminal")
     print()
 
