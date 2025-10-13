@@ -15,16 +15,16 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from db.db_man import DatabaseManager
-from observability.logging.centralized_logging import setup_centralized_logger
-from utils.date_formatter import get_current_time
-from config.config import (
+from db_man import DatabaseManager
+from logging_utils import setup_logger
+from utils import get_current_time
+from config import (
     BOOKING_FORMS, YCLIENTS_PARTNER_TOKEN, YCLIENTS_USER_TOKEN,
     YCLIENTS_TIMEOUT, YCLIENTS_MAX_RETRIES, YCLIENTS_BACKOFF_FACTOR
 )
 
 # Initialize logger
-logger, _ = setup_centralized_logger("yclients_salons")
+logger, _ = setup_logger("yclients_salons.log", "yclients_salons", "INFO", "DEBUG")
 
 class YClientsSalonsFetcher:
     """Fetches salon information from YCLIENTS booking forms and company API"""
