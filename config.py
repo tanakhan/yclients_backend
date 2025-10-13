@@ -35,7 +35,6 @@ else:
     # Default development connection (existing way)
     MONGODB_CONNECTION_STRING = "mongodb://localhost:27017"
 
-
 # YCLIENTS timeout configurations
 YCLIENTS_TIMEOUT = 10
 YCLIENTS_MAX_RETRIES = 3
