@@ -38,4 +38,7 @@ else:
 # YCLIENTS timeout configurations
 YCLIENTS_TIMEOUT = 10
 YCLIENTS_MAX_RETRIES = 3
-YCLIENTS_BACKOFF_FACTOR = 0.5</search>
+YCLIENTS_BACKOFF_FACTOR = 0.5
+
+# Legacy config variables for compatibility with existing code
+TIMEZONE = "UTC"

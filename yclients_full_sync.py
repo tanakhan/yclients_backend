@@ -30,13 +30,15 @@ logger, _ = setup_logger("yclients_full_sync.log", "yclients_full_sync", "INFO",
 class YClientsFullDataSyncer:
     """Complete YCLIENTS data syncer combining salons, services, and staff fetching"""
 
-    def __init__(self, profile_name: Optional[str] = None):
+    def __init__(self, profile_name: Optional[str] = None, verbose: bool = False):
         """
         Initialize YCLIENTS full data syncer
 
         Args:
             profile_name: Name of the profile to use (uses default if None)
+            verbose: Whether to print raw API responses
         """
+        self.verbose = verbose
         self.profile_manager = ProfileManager()
         self.profile = self.profile_manager.get_profile(profile_name)
 
@@ -94,10 +96,11 @@ class YClientsFullDataSyncer:
             response = self.session.get(url, headers=headers, timeout=YCLIENTS_TIMEOUT)
             response.raise_for_status()
 
-            # Print raw response for debugging
-            print(f"Raw API response for {url}:")
-            print(response.text)
-            print("-" * 40)
+            # Print raw response for debugging only if verbose mode is enabled
+            if self.verbose:
+                print(f"Raw API response for {url}:")
+                print(response.text)
+                print("-" * 40)
 
             return response.json()
         except requests.exceptions.RequestException as e:
@@ -125,12 +128,13 @@ class YClientsFullDataSyncer:
                 logger.warning(f"No salon info received for salon {salon_id}")
                 return False
 
-            # Show prettified JSON in terminal
-            print(f"\\n{'='*60}")
-            print(f"SALON INFO FOR SALON {salon_id}")
-            print(f"{'='*60}")
-            print(json.dumps(salon_info, indent=2, ensure_ascii=False))
-            print(f"{'='*60}\\n")
+            # Show prettified JSON in terminal if verbose
+            if self.verbose:
+                print(f"\\n{'='*60}")
+                print(f"SALON INFO FOR SALON {salon_id}")
+                print(f"{'='*60}")
+                print(json.dumps(salon_info, indent=2, ensure_ascii=False))
+                print(f"{'='*60}\\n")
 
             # Save to MongoDB 'salons' collection using upsert
             current_time = get_current_time(self.company_timezone)
@@ -266,15 +270,16 @@ class YClientsFullDataSyncer:
             else:
                 logger.warning(f"No categories data found at all for salon {salon_id}")
 
-            # Show prettified JSON in terminal
-            print(f"\\n{'='*60}")
-            print(f"RAW SERVICES DATA FOR SALON {salon_id}")
-            print(f"{'='*60}")
-            print(json.dumps(complete_raw_data, indent=2, ensure_ascii=False))
-            print(f"{'='*60}\\n")
+            # Show prettified JSON in terminal if verbose
+            if self.verbose:
+                print(f"\\n{'='*60}")
+                print(f"RAW SERVICES DATA FOR SALON {salon_id}")
+                print(f"{'='*60}")
+                print(json.dumps(complete_raw_data, indent=2, ensure_ascii=False))
+                print(f"{'='*60}\\n")
 
-            # Show categories data if available
-            if categories_data:
+            # Show categories data if available and verbose
+            if categories_data and self.verbose:
                 print(f"\\n{'='*60}")
                 print(f"RAW CATEGORIES DATA FOR SALON {salon_id}")
                 print(f"{'='*60}")
@@ -376,12 +381,13 @@ class YClientsFullDataSyncer:
                 logger.warning(f"No staff data received from YCLIENTS API for salon {salon_id}")
                 return False
 
-            # Show prettified JSON in terminal
-            print(f"\\n{'='*60}")
-            print(f"RAW STAFF DATA FOR SALON {salon_id}")
-            print(f"{'='*60}")
-            print(json.dumps(staff_response, indent=2, ensure_ascii=False))
-            print(f"{'='*60}\\n")
+            # Show prettified JSON in terminal if verbose
+            if self.verbose:
+                print(f"\\n{'='*60}")
+                print(f"RAW STAFF DATA FOR SALON {salon_id}")
+                print(f"{'='*60}")
+                print(json.dumps(staff_response, indent=2, ensure_ascii=False))
+                print(f"{'='*60}\\n")
 
             # Update salon document in 'salons' collection using upsert
             current_time = get_current_time(self.company_timezone)
@@ -685,13 +691,13 @@ class YClientsFullDataSyncer:
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
-async def main(profile_name: Optional[str] = None):
+async def main(profile_name: Optional[str] = None, verbose: bool = False):
     """Main function to run full YCLIENTS data sync"""
     try:
         logger.info("Starting YCLIENTS full data sync process")
 
-        # Initialize syncer with profile
-        syncer = YClientsFullDataSyncer(profile_name)
+        # Initialize syncer with profile and verbose flag
+        syncer = YClientsFullDataSyncer(profile_name, verbose)
 
         success = await syncer.run_full_sync()
         if success:
@@ -712,6 +718,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="YCLIENTS Full Data Sync")
     parser.add_argument('--company', help='Company name to process (from profiles)')
     parser.add_argument('--list-profiles', action='store_true', help='List available profiles')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Print raw API responses and JSON data')
 
     args = parser.parse_args()
 
@@ -747,7 +754,7 @@ if __name__ == "__main__":
             sys.exit(1)
 
         print(f"Processing company: {args.company} (profile: {profile_name})")
-        success = asyncio.run(main(profile_name))
+        success = asyncio.run(main(profile_name, args.verbose))
         sys.exit(0 if success else 1)
     else:
         # Process all companies with 10-second pauses
@@ -763,7 +770,7 @@ if __name__ == "__main__":
             print(f"{'='*60}")
 
             try:
-                success = asyncio.run(main(profile_name))
+                success = asyncio.run(main(profile_name, args.verbose))
                 if not success:
                     overall_success = False
                     print(f"Warning: Failed to process company {company_name}")
