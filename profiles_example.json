@@ -1,0 +1,35 @@
+{
+  "profiles": {
+    "company1": {
+      "name": "Company One",
+      "yclients": {
+        "partner_token": "your_partner_token_company1",
+        "user_token": "your_user_token_company1",
+        "booking_forms": [12345, 67890]
+      },
+      "proxy": {
+        "use_proxy": false,
+        "host": "proxy.example.com",
+        "port": 8080,
+        "username": "proxy_user",
+        "password": "proxy_pass"
+      }
+    },
+    "company2": {
+      "name": "Company Two",
+      "yclients": {
+        "partner_token": "your_partner_token_company2",
+        "user_token": "your_user_token_company2",
+        "booking_forms": [54321, 98765]
+      },
+      "proxy": {
+        "use_proxy": true,
+        "host": "proxy.company2.com",
+        "port": 3128,
+        "username": "company2_proxy_user",
+        "password": "company2_proxy_pass"
+      }
+    }
+  },
+  "default_profile": "company1"
+}

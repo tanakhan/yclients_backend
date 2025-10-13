@@ -68,3 +68,4 @@ coverage.xml
 .env.production
 tajiri.json
 assets
+profiles.json

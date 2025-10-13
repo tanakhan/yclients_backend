@@ -18,36 +18,54 @@ if project_root not in sys.path:
 from db_man import DatabaseManager
 from logging_utils import setup_logger
 from utils import get_current_time
-from config import (
-    BOOKING_FORMS, YCLIENTS_PARTNER_TOKEN, YCLIENTS_USER_TOKEN,
-    YCLIENTS_TIMEOUT, YCLIENTS_MAX_RETRIES, YCLIENTS_BACKOFF_FACTOR
-)
+from config import YCLIENTS_TIMEOUT, YCLIENTS_MAX_RETRIES, YCLIENTS_BACKOFF_FACTOR
+from profile_manager import ProfileManager
 
 # Initialize logger
 logger, _ = setup_logger("yclients_salons.log", "yclients_salons", "INFO", "DEBUG")
 
 class YClientsSalonsFetcher:
     """Fetches salon information from YCLIENTS booking forms and company API"""
-    
-    def __init__(self, partner_token: str, user_token: Optional[str] = None):
+
+    def __init__(self, profile_name: Optional[str] = None):
         """
         Initialize YCLIENTS salons data fetcher
-        
+
         Args:
-            partner_token: YCLIENTS partner token
-            user_token: Optional YCLIENTS user token
+            profile_name: Name of the profile to use (uses default if None)
         """
-        self.partner_token = partner_token
-        self.user_token = user_token
+        self.profile_manager = ProfileManager()
+        self.profile = self.profile_manager.get_profile(profile_name)
+
+        if not self.profile:
+            raise ValueError(f"Profile '{profile_name}' not found")
+
+        self.partner_token = self.profile['yclients']['partner_token']
+        self.user_token = self.profile['yclients'].get('user_token')
+        self.booking_forms = self.profile['yclients']['booking_forms']
+
         self.db_manager = DatabaseManager()
         self.base_url = "https://api.yclients.com/api/v1"
-        
+
         # Setup session for HTTP requests
         self.session = requests.Session()
+
+        # Configure proxy if enabled
+        proxy_settings = self.profile_manager.get_proxy_settings(profile_name)
+        if proxy_settings:
+            proxies = {
+                'http': f"http://{proxy_settings['username']}:{proxy_settings['password']}@{proxy_settings['host']}:{proxy_settings['port']}",
+                'https': f"http://{proxy_settings['username']}:{proxy_settings['password']}@{proxy_settings['host']}:{proxy_settings['port']}"
+            }
+            self.session.proxies.update(proxies)
+            logger.info(f"Using proxy: {proxy_settings['host']}:{proxy_settings['port']}")
+
         self.session.headers.update({
             'Accept': 'application/vnd.yclients.v2+json',
             'Authorization': f'Bearer {self.partner_token}'
         })
+
+        logger.info(f"Initialized YCLIENTS fetcher for profile: {self.profile['name']}")
     
     def _make_request(self, url: str, use_user_token: bool = False) -> Optional[Dict[str, Any]]:
         """
@@ -236,50 +254,64 @@ class YClientsSalonsFetcher:
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
 
-async def main():
+async def main(profile_name: Optional[str] = None):
     """Main function to fetch and save YCLIENTS salon data"""
-    # Get YCLIENTS API configuration from config
-    form_ids = BOOKING_FORMS
-    partner_token = YCLIENTS_PARTNER_TOKEN
-    user_token = YCLIENTS_USER_TOKEN
-    
-    if not form_ids:
-        logger.error("BOOKING_FORMS not configured in config.py (should be comma-separated list)")
-        return False
-    
-    if not partner_token:
-        logger.error("YCLIENTS_PARTNER_TOKEN not configured in config.py")
-        return False
-    
-    logger.info(f"Processing {len(form_ids)} booking forms: {form_ids}")
-    
-    fetcher = YClientsSalonsFetcher(
-        partner_token=partner_token,
-        user_token=user_token
-    )
-    
     try:
+        logger.info("Starting YCLIENTS salon data fetch process")
+
+        # Initialize fetcher with profile
+        fetcher = YClientsSalonsFetcher(profile_name)
+
+        form_ids = fetcher.booking_forms
+        if not form_ids:
+            logger.error("No booking forms configured in profile")
+            return False
+
+        logger.info(f"Processing {len(form_ids)} booking forms: {form_ids}")
+
         # Step 1: Fetch all unique salon IDs from booking forms
         all_salon_ids = fetcher.fetch_all_salon_ids(form_ids)
-        
+
         if not all_salon_ids:
             logger.error("No salon IDs found in any booking forms")
             return False
-        
+
         # Step 2: Fetch and save salon information for all salon IDs
         success = await fetcher.fetch_and_save_all_salons_info(all_salon_ids)
-        
+
         if success:
             logger.info("YCLIENTS salon data fetch completed successfully for all salons")
         else:
             logger.error("YCLIENTS salon data fetch failed for some salons")
-        
+
         return success
-        
+
+    except Exception as e:
+        logger.error(f"Error in main function: {e}")
+        return False
     finally:
-        await fetcher.cleanup()
+        if 'fetcher' in locals():
+            await fetcher.cleanup()
 
 if __name__ == "__main__":
+    import argparse
+    import time
+
+    parser = argparse.ArgumentParser(description="YCLIENTS Salons Data Fetcher")
+    parser.add_argument('--company', help='Company name to process (from profiles)')
+    parser.add_argument('--list-profiles', action='store_true', help='List available profiles')
+
+    args = parser.parse_args()
+
+    if args.list_profiles:
+        pm = ProfileManager()
+        print("Available profiles:")
+        for name, profile in pm.get_all_profiles().items():
+            proxy_status = "with proxy" if profile.get('proxy', {}).get('use_proxy', False) else "no proxy"
+            print(f"- {name}: {profile.get('name', 'Unnamed')} ({proxy_status})")
+        print(f"\nDefault profile: {pm.default_profile}")
+        sys.exit(0)
+
     print("YCLIENTS Salons Data Fetcher")
     print("Fetches salon information from YCLIENTS booking forms")
     print("- Extracts salon IDs from booking forms")
@@ -287,6 +319,55 @@ if __name__ == "__main__":
     print("- Shows prettified JSON in terminal")
     print("- Stores in MongoDB 'salons' collection")
     print()
-    
-    success = asyncio.run(main())
-    sys.exit(0 if success else 1)
+
+    pm = ProfileManager()
+
+    if args.company:
+        # Find profile by company name
+        profile_name = None
+        for name, profile in pm.get_all_profiles().items():
+            if profile.get('name') == args.company:
+                profile_name = name
+                break
+
+        if not profile_name:
+            print(f"Error: Company '{args.company}' not found in profiles")
+            sys.exit(1)
+
+        print(f"Processing company: {args.company} (profile: {profile_name})")
+        success = asyncio.run(main(profile_name))
+        sys.exit(0 if success else 1)
+    else:
+        # Process all companies with 10-second pauses
+        all_profiles = pm.get_all_profiles()
+        print(f"Processing all {len(all_profiles)} companies with 10-second pauses...")
+
+        overall_success = True
+        for i, (profile_name, profile) in enumerate(all_profiles.items()):
+            company_name = profile.get('name', profile_name)
+            print(f"\n{'='*60}")
+            print(f"Processing company {i+1}/{len(all_profiles)}: {company_name}")
+            print(f"{'='*60}")
+
+            try:
+                success = asyncio.run(main(profile_name))
+                if not success:
+                    overall_success = False
+                    print(f"Warning: Failed to process company {company_name}")
+            except Exception as e:
+                print(f"Error processing company {company_name}: {e}")
+                overall_success = False
+
+            # Wait 10 seconds before next company (except for the last one)
+            if i < len(all_profiles) - 1:
+                print(f"Waiting 10 seconds before next company...")
+                time.sleep(10)
+
+        print(f"\n{'='*60}")
+        if overall_success:
+            print("All companies processed successfully!")
+        else:
+            print("Some companies failed to process completely")
+        print(f"{'='*60}")
+
+        sys.exit(0 if overall_success else 1)
