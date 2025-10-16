@@ -470,8 +470,9 @@ class YClientsFullDataSyncer:
                 salon_data = salon_doc['salon_info']['data']
                 simplified_data['salon_info'] = {
                     salon_data.get('title', ''): {
-                        'id': salon_data.get('id'),
-                        'phone': salon_data.get('phone', ''),
+                        'public_title': salon_data.get('public_title', ''),
+                        'short_descr': salon_data.get('short_descr', ''),
+                        'city': salon_data.get('city', ''),
                         'address': salon_data.get('address', '')
                     }
                 }
