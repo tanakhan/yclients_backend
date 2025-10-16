@@ -462,6 +462,7 @@ class YClientsFullDataSyncer:
 
             simplified_data = {
                 "_id": str(salon_id),
+                "id": str(salon_id),
             }
 
             # Extract salon info
